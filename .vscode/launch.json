@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Run Extension",
+        "type": "extensionHost",
+        "request": "launch",
+        "program": "${workspaceFolder}/out/src/extension.js",
+        "args": [],
+        "stopOnEntry": false,
+        "outFiles": [
+          "${workspaceFolder}/out/**/*.js"
+        ],
+        "sourceMaps": true,
+        "smartStep": true,
+        "preLaunchTask": "npm: watch",
+        "runtimeExecutable": null,
+        "runtimeArgs": [
+          "--extensionDevelopmentPath=${workspaceFolder}"
+        ]
+      }
+    ]
+  }
+  

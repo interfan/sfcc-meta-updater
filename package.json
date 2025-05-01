@@ -1,0 +1,41 @@
+{
+    "name": "sfcc-meta-updater",
+    "displayName": "SFCC Meta Updater",
+    "description": "An extension for updating SFCC meta information",
+    "version": "0.1.0",
+    "publisher": "YourPublisherName",
+    "engines": {
+      "vscode": "^1.60.0"
+    },
+    "main": "./out/src/extension.js",
+    "activationEvents": [
+      "onCommand:sfcc-meta-updater.updateWholeTypeExtension",
+      "onCommand:sfcc-meta-updater.updateDetailedTypeExtension"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "command": "sfcc-meta-updater.updateWholeTypeExtension",
+          "title": "Update Whole SFCC Meta Type Extension"
+        },
+        {
+          "command": "sfcc-meta-updater.updateDetailedTypeExtension",
+          "title": "Update Detailed SFCC Meta Type Extension"
+        }
+      ]
+    },
+    "scripts": {
+      "watch": "tsc -w",
+      "build": "tsc"
+    },
+    "dependencies": {
+      "xml2js": "^0.4.23",
+      "vscode": "^1.1.37"
+    },
+    "devDependencies": {
+      "@types/node": "^14.14.37",
+      "@types/vscode": "^1.60.0",
+      "typescript": "^4.4.3"
+    }
+  }
+  
