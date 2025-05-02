@@ -185,28 +185,26 @@ async function updateWholeTypeExtension(context: vscode.ExtensionContext) {
         }
     }
 }
+
 async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
     const parsedData = await uploadSFCCMetaFile(context);
-    if (!parsedData) return;  // Return early if the upload failed
+    if (!parsedData) return;
 
     const typeExtensions = parsedData.metadata['type-extension'];
-
-    // Let the user choose which type-extension to update
-    const typeIds = typeExtensions.map((type: any) => type['$']['type-id']);
+    const typeIds = typeExtensions.map((type) => type['$']['type-id']);
     const selectedTypeId = await vscode.window.showQuickPick(typeIds, {
         placeHolder: 'Select Type Extension to update',
     });
 
     if (!selectedTypeId) return;
 
-    const selectedType = typeExtensions.find((type: any) => type['$']['type-id'] === selectedTypeId);
-
+    const selectedType = typeExtensions.find((type) => type['$']['type-id'] === selectedTypeId);
     if (!selectedType) {
         vscode.window.showErrorMessage('Selected type-extension not found.');
         return;
     }
 
-    // Step 2: Get and sort attribute-definitions alphabetically
+    // Extract attribute-definitions
     let attributeDefinitions: AttributeDefinition[] = [];
 
     if (selectedType['custom-attribute-definitions'] && selectedType['custom-attribute-definitions'][0]) {
@@ -219,20 +217,8 @@ async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
     }
 
     const attributeNames = attributeDefinitions
-        .map((attr: any) => {
-            if (attr['$'] && attr['$']['attribute-id']) {
-                return attr['$']['attribute-id'];
-            } else {
-                return null;
-            }
-        })
-        .filter((id: string | null) => id !== null)  
+        .map((attr) => attr['$']['attribute-id'])
         .sort();
-
-    if (attributeNames.length === 0) {
-        vscode.window.showErrorMessage('No valid attribute definitions found.');
-        return;
-    }
 
     const selectedAttributes = await vscode.window.showQuickPick(attributeNames, {
         canPickMany: true,
@@ -244,9 +230,10 @@ async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
         return;
     }
 
-    // Step 3: Select group definitions
+    // Select group definitions
     const groupDefinitions = selectedType['group-definitions'][0]['attribute-group'] || [];
-    const groupNames = groupDefinitions.map((group: any) => group['$']['group-id']).sort();
+    const groupNames = groupDefinitions.map((group) => group['$']['group-id']).sort();
+
     const selectedGroupDefinitions = await vscode.window.showQuickPick(groupNames, {
         canPickMany: true,
         placeHolder: 'Select group definitions to update (Ctrl+Click to select multiple)',
@@ -257,12 +244,10 @@ async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
         return;
     }
 
-    // Step 4: Select behavior for each group definition
+    // Update option
     const updateOption = await vscode.window.showQuickPick(
         ['Update with selected attributes', 'Update only the differences', 'Copy the entire group definition'],
-        {
-            placeHolder: 'Choose how you want to update the group definitions',
-        }
+        { placeHolder: 'Choose how you want to update the group definitions' }
     );
 
     if (!updateOption) {
@@ -275,7 +260,10 @@ async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
 
     const destinationFileContent = fs.readFileSync(selectedFilePath, 'utf-8');
     const parser = new xml2js.Parser();
-    const builder = new xml2js.Builder();
+    const builder = new xml2js.Builder({
+        renderOpts: { pretty: true },
+        xmldec: { version: '1.0', encoding: 'UTF-8' },
+    });
 
     try {
         const result = await parser.parseStringPromise(destinationFileContent);
@@ -292,34 +280,104 @@ async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
             return;
         }
 
-        // Preserve existing attribute-definitions and update the selected ones
-        const updatedAttributes = selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition']
-            .filter((attr: any) => selectedAttributes.includes(attr['$']['attribute-id']));
+        // === CUSTOM ATTRIBUTES MERGE ===
 
-        // Preserve existing group-definitions and update the selected ones
-        const updatedGroups = selectedTypeToUpdate['group-definitions'][0]['attribute-group']
-            .filter((group: any) => selectedGroupDefinitions.includes(group['$']['group-id']));
+        const allAttributes = selectedTypeToUpdate['custom-attribute-definitions']?.[0]?.['attribute-definition'] || [];
 
-        // Handle group updates based on the selected option
-        updatedGroups.forEach((group: any) => {
-            if (updateOption === 'Update with selected attributes') {
-                group['attribute-definition'] = updatedAttributes;
-            } else if (updateOption === 'Update only the differences') {
-                group['attribute-definition'] = updatedAttributes.filter((attr: any) => {
-                    return group['attribute-definition'].some((oldAttr: any) => oldAttr['$']['attribute-id'] === attr['$']['attribute-id']);
-                });
-            } else if (updateOption === 'Copy the entire group definition') {
-                group['attribute-definition'] = group['attribute-definition']; 
+        const selectedAttributeIdsSet = new Set(selectedAttributes);
+
+        const mergedAttributes = allAttributes.map((attr: AttributeDefinition) => {
+            if (selectedAttributeIdsSet.has(attr['$']['attribute-id'])) {
+                const newAttr = attributeDefinitions.find((a: AttributeDefinition) => a['$']['attribute-id'] === attr['$']['attribute-id']);
+                return newAttr || attr;
+            }
+            return attr;
+        });
+
+        // Add new attributes if missing
+        selectedAttributes.forEach((attributeId) => {
+            if (!mergedAttributes.some((attr: AttributeDefinition) => attr['$']['attribute-id'] === attributeId)) {
+                const newAttr = attributeDefinitions.find((a: AttributeDefinition) => a['$']['attribute-id'] === attributeId);
+                if (newAttr) mergedAttributes.push(newAttr);
             }
         });
 
-        // Rebuild the XML and write back to the destination file
-        selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition'] = updatedAttributes;
-        selectedTypeToUpdate['group-definitions'][0]['attribute-group'] = updatedGroups;
+        // Sort attributes alphabetically
+        mergedAttributes.sort((a: AttributeDefinition, b: AttributeDefinition) => {
+            const idA = a['$']['attribute-id'].toLowerCase();
+            const idB = b['$']['attribute-id'].toLowerCase();
+            return idA.localeCompare(idB);
+        });
 
+        if (!selectedTypeToUpdate['custom-attribute-definitions']) {
+            selectedTypeToUpdate['custom-attribute-definitions'] = [{}];
+        }
+
+        selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition'] = mergedAttributes;
+
+        // === GROUP DEFINITIONS MERGE ===
+
+        const allGroups = selectedTypeToUpdate['group-definitions'][0]['attribute-group'] || [];
+        const updatedGroupIdsSet = new Set(selectedGroupDefinitions);
+
+        const mergedGroups = allGroups.map((group: any) => {
+            if (updatedGroupIdsSet.has(group['$']['group-id'])) {
+                const newGroup = { ...group };
+
+                if (updateOption === 'Copy the entire group definition') {
+                    // Copy entire group from source file
+                    const sourceGroup = groupDefinitions.find((g: any) => g['$']['group-id'] === group['$']['group-id']);
+                    if (sourceGroup) {
+                        return sourceGroup;
+                    }
+                    return group;
+                }
+
+                if (updateOption === 'Update with selected attributes') {
+                    newGroup['attribute'] = selectedAttributes.map((attrId) => ({
+                        '$': { 'attribute-id': attrId }
+                    }));
+                } else if (updateOption === 'Update only the differences') {
+                    const existingAttributes = newGroup['attribute']?.map((attr: any) => attr['$']['attribute-id']) || [];
+                    newGroup['attribute'] = selectedAttributes
+                        .filter(attrId => existingAttributes.includes(attrId))
+                        .map(attrId => ({
+                            '$': { 'attribute-id': attrId }
+                        }));
+                }
+
+                return newGroup;
+            }
+
+            return group;
+        });
+
+        // === ADD NEW GROUPS IF NOT EXIST ===
+
+        selectedGroupDefinitions.forEach((groupId) => {
+            const alreadyExists = mergedGroups.some((group: any) => group['$']['group-id'] === groupId);
+
+            if (!alreadyExists) {
+                mergedGroups.push({
+                    '$': { 'group-id': groupId },
+                    'display-name': [{
+                        '_': groupId,
+                        '$': { 'xml:lang': 'x-default' }
+                    }],
+                    'attribute': selectedAttributes.map((attrId) => ({
+                        '$': { 'attribute-id': attrId }
+                    }))
+                });
+            }
+        });
+
+        selectedTypeToUpdate['group-definitions'][0]['attribute-group'] = mergedGroups;
+
+        // === WRITE BACK ===
         const updatedXml = builder.buildObject(result);
         fs.writeFileSync(selectedFilePath, updatedXml);
         vscode.window.showInformationMessage('Destination file updated with selected attributes and groups.');
+
     } catch (err) {
         if (err instanceof Error) {
             vscode.window.showErrorMessage('Error parsing destination XML file: ' + err.message);
@@ -328,6 +386,8 @@ async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
         }
     }
 }
+
+
 
 
 // Registering the commands

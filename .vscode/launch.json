@@ -1,24 +1,18 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "Run Extension",
-        "type": "extensionHost",
-        "request": "launch",
-        "program": "${workspaceFolder}/out/src/extension.js",
-        "args": [],
-        "stopOnEntry": false,
-        "outFiles": [
-          "${workspaceFolder}/out/**/*.js"
-        ],
-        "sourceMaps": true,
-        "smartStep": true,
-        "preLaunchTask": "npm: watch",
-        "runtimeExecutable": null,
-        "runtimeArgs": [
-          "--extensionDevelopmentPath=${workspaceFolder}"
-        ]
-      }
-    ]
-  }
-  
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "sourceMaps": true
+    }
+  ]
+}
