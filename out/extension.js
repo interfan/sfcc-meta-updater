@@ -103,15 +103,13 @@ function selectDestinationFile() {
         return null;
     });
 }
-// Function to update the whole type-extension in the destination file
 function updateWholeTypeExtension(context) {
+    var _a, _b, _c, _d;
     return __awaiter(this, void 0, void 0, function* () {
-        // Ensure the meta file is uploaded first
         const parsedData = yield uploadSFCCMetaFile(context);
         if (!parsedData)
-            return; // Return early if the upload failed
+            return;
         const typeExtensions = parsedData.metadata['type-extension'];
-        // Let the user choose which type-extension to update
         const typeIds = typeExtensions.map((type) => type['$']['type-id']);
         const selectedTypeId = yield vscode.window.showQuickPick(typeIds, {
             placeHolder: 'Select Type Extension to update',
@@ -128,41 +126,38 @@ function updateWholeTypeExtension(context) {
             return;
         const destinationFileContent = fs.readFileSync(selectedFilePath, 'utf-8');
         const parser = new xml2js.Parser();
-        const builder = new xml2js.Builder();
+        const builder = new xml2js.Builder({
+            renderOpts: { pretty: true },
+            xmldec: { version: '1.0', encoding: 'UTF-8' },
+        });
         try {
             const result = yield parser.parseStringPromise(destinationFileContent);
-            // Ensure the structure is correct before trying to modify it
             if (!result.metadata || !result.metadata['type-extension']) {
                 vscode.window.showErrorMessage('Destination file does not have the expected metadata or type-extension structure.');
                 return;
             }
-            // Find the selected type-extension in the destination file and update it
-            const selectedTypeToUpdate = result.metadata['type-extension'].find((type) => type['$']['type-id'] === selectedTypeId);
-            if (!selectedTypeToUpdate) {
-                vscode.window.showErrorMessage('Selected type-extension to update was not found in the destination file.');
-                return;
-            }
-            // Update the selected type-extension, while preserving other type-extensions
+            // Clone selectedType so we can modify it safely
+            const clonedType = JSON.parse(JSON.stringify(selectedType));
+            // === Sort custom-attribute-definitions ===
+            const attributeDefs = ((_b = (_a = clonedType['custom-attribute-definitions']) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b['attribute-definition']) || [];
+            attributeDefs.sort((a, b) => a['$']['attribute-id'].toLowerCase().localeCompare(b['$']['attribute-id'].toLowerCase()));
+            // === Sort group-definitions ===
+            const groupDefs = ((_d = (_c = clonedType['group-definitions']) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d['attribute-group']) || [];
+            groupDefs.sort((a, b) => a['$']['group-id'].toLowerCase().localeCompare(b['$']['group-id'].toLowerCase()));
+            // Replace the selected type-extension in the destination file
             const updatedTypeExtensions = result.metadata['type-extension'].map((type) => {
                 if (type['$']['type-id'] === selectedTypeId) {
-                    return selectedType; // Replace the selected type-extension with the new one
+                    return clonedType; // Use sorted clone
                 }
-                return type; // Keep the others unchanged
+                return type;
             });
-            // Assign the updated type-extensions back to the result
             result.metadata['type-extension'] = updatedTypeExtensions;
-            // Rebuild the XML and write back to the destination file
             const updatedXml = builder.buildObject(result);
             fs.writeFileSync(selectedFilePath, updatedXml);
             vscode.window.showInformationMessage('Destination file updated with selected type-extension.');
         }
         catch (err) {
-            if (err instanceof Error) {
-                vscode.window.showErrorMessage('Error parsing destination XML file: ' + err.message);
-            }
-            else {
-                vscode.window.showErrorMessage('Unknown error occurred during file parsing.');
-            }
+            vscode.window.showErrorMessage('Error parsing destination XML file: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
 }
@@ -189,38 +184,35 @@ function updateDetailedTypeExtension(context) {
         if (selectedType['custom-attribute-definitions'] && selectedType['custom-attribute-definitions'][0]) {
             attributeDefinitions = selectedType['custom-attribute-definitions'][0]['attribute-definition'] || [];
         }
-        if (attributeDefinitions.length === 0) {
-            vscode.window.showErrorMessage('No attribute definitions found for the selected type-extension.');
-            return;
-        }
-        const attributeNames = attributeDefinitions
-            .map((attr) => attr['$']['attribute-id'])
-            .sort();
-        const selectedAttributes = yield vscode.window.showQuickPick(attributeNames, {
+        const attributeNames = attributeDefinitions.map((attr) => attr['$']['attribute-id']).sort();
+        const selectedAttributes = (yield vscode.window.showQuickPick(attributeNames, {
             canPickMany: true,
-            placeHolder: 'Select attributes to update (Ctrl+Click to select multiple)',
-        });
-        if (!selectedAttributes) {
-            vscode.window.showErrorMessage('No attributes selected.');
-            return;
-        }
+            placeHolder: 'Select attributes to update (optional)',
+        })) || [];
         // Select group definitions
         const groupDefinitions = selectedType['group-definitions'][0]['attribute-group'] || [];
         const groupNames = groupDefinitions.map((group) => group['$']['group-id']).sort();
-        const selectedGroupDefinitions = yield vscode.window.showQuickPick(groupNames, {
+        const selectedGroupDefinitions = (yield vscode.window.showQuickPick(groupNames, {
             canPickMany: true,
-            placeHolder: 'Select group definitions to update (Ctrl+Click to select multiple)',
-        });
-        if (!selectedGroupDefinitions) {
-            vscode.window.showErrorMessage('No group definitions selected.');
+            placeHolder: 'Select group definitions to update (optional)',
+        })) || [];
+        const hasAttributes = selectedAttributes.length > 0;
+        const hasGroups = selectedGroupDefinitions.length > 0;
+        // === Nothing to update
+        if (!hasAttributes && !hasGroups) {
+            vscode.window.showInformationMessage('No attributes or groups selected. Nothing to update.');
             return;
         }
-        // Update option
-        const updateOption = yield vscode.window.showQuickPick(['Update with selected attributes', 'Update only the differences', 'Copy the entire group definition'], { placeHolder: 'Choose how you want to update the group definitions' });
-        if (!updateOption) {
-            vscode.window.showErrorMessage('No update option selected.');
-            return;
+        // Ask for update option if groups are selected
+        let updateOption;
+        if (hasGroups) {
+            updateOption = yield vscode.window.showQuickPick(['Update with selected attributes', 'Update only the differences', 'Copy the entire group definition'], { placeHolder: 'Choose how you want to update the group definitions' });
+            if (!updateOption) {
+                vscode.window.showErrorMessage('No update option selected.');
+                return;
+            }
         }
+        // Ask for destination file
         const selectedFilePath = yield selectDestinationFile();
         if (!selectedFilePath)
             return;
@@ -242,111 +234,116 @@ function updateDetailedTypeExtension(context) {
                 return;
             }
             // === CUSTOM ATTRIBUTES MERGE ===
-            const allAttributes = ((_b = (_a = selectedTypeToUpdate['custom-attribute-definitions']) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b['attribute-definition']) || [];
-            const selectedAttributeIdsSet = new Set(selectedAttributes);
-            const mergedAttributes = allAttributes.map((attr) => {
-                if (selectedAttributeIdsSet.has(attr['$']['attribute-id'])) {
-                    const newAttr = attributeDefinitions.find((a) => a['$']['attribute-id'] === attr['$']['attribute-id']);
-                    return newAttr || attr;
+            if (hasAttributes) {
+                const allAttributes = ((_b = (_a = selectedTypeToUpdate['custom-attribute-definitions']) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b['attribute-definition']) || [];
+                const selectedAttributeIdsSet = new Set(selectedAttributes);
+                const mergedAttributes = allAttributes.map((attr) => {
+                    if (selectedAttributeIdsSet.has(attr['$']['attribute-id'])) {
+                        const newAttr = attributeDefinitions.find((a) => a['$']['attribute-id'] === attr['$']['attribute-id']);
+                        return newAttr || attr;
+                    }
+                    return attr;
+                });
+                // Add new attributes if missing
+                selectedAttributes.forEach((attributeId) => {
+                    if (!mergedAttributes.some((attr) => attr['$']['attribute-id'] === attributeId)) {
+                        const newAttr = attributeDefinitions.find((a) => a['$']['attribute-id'] === attributeId);
+                        if (newAttr)
+                            mergedAttributes.push(newAttr);
+                    }
+                });
+                // Sort attributes
+                mergedAttributes.sort((a, b) => a['$']['attribute-id'].toLowerCase().localeCompare(b['$']['attribute-id'].toLowerCase()));
+                if (!selectedTypeToUpdate['custom-attribute-definitions']) {
+                    selectedTypeToUpdate['custom-attribute-definitions'] = [{}];
                 }
-                return attr;
-            });
-            // Add new attributes if missing
-            selectedAttributes.forEach((attributeId) => {
-                if (!mergedAttributes.some((attr) => attr['$']['attribute-id'] === attributeId)) {
-                    const newAttr = attributeDefinitions.find((a) => a['$']['attribute-id'] === attributeId);
-                    if (newAttr)
-                        mergedAttributes.push(newAttr);
-                }
-            });
-            // Sort attributes alphabetically
-            mergedAttributes.sort((a, b) => {
-                const idA = a['$']['attribute-id'].toLowerCase();
-                const idB = b['$']['attribute-id'].toLowerCase();
-                return idA.localeCompare(idB);
-            });
-            if (!selectedTypeToUpdate['custom-attribute-definitions']) {
-                selectedTypeToUpdate['custom-attribute-definitions'] = [{}];
+                selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition'] = mergedAttributes;
             }
-            selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition'] = mergedAttributes;
             // === GROUP DEFINITIONS MERGE ===
-            const allGroups = selectedTypeToUpdate['group-definitions'][0]['attribute-group'] || [];
-            const updatedGroupIdsSet = new Set(selectedGroupDefinitions);
-            const mergedGroups = allGroups.map((group) => {
-                var _a;
-                if (updatedGroupIdsSet.has(group['$']['group-id'])) {
-                    const newGroup = Object.assign({}, group);
-                    if (updateOption === 'Copy the entire group definition') {
-                        // Copy entire group from source file
-                        const sourceGroup = groupDefinitions.find((g) => g['$']['group-id'] === group['$']['group-id']);
-                        if (sourceGroup) {
-                            return sourceGroup;
+            if (hasGroups) {
+                const allGroups = selectedTypeToUpdate['group-definitions'][0]['attribute-group'] || [];
+                const updatedGroupIdsSet = new Set(selectedGroupDefinitions);
+                const mergedGroups = allGroups.map((group) => {
+                    var _a, _b, _c;
+                    if (updatedGroupIdsSet.has(group['$']['group-id'])) {
+                        const newGroup = Object.assign({}, group);
+                        if (updateOption === 'Copy the entire group definition') {
+                            const sourceGroup = groupDefinitions.find((g) => g['$']['group-id'] === group['$']['group-id']);
+                            if (sourceGroup)
+                                return sourceGroup;
+                            return group;
                         }
-                        return group;
+                        if (updateOption === 'Update with selected attributes') {
+                            const existingAttributes = ((_a = newGroup['attribute']) === null || _a === void 0 ? void 0 : _a.map((attr) => attr['$']['attribute-id'])) || [];
+                            const mergedAttributeIds = [...existingAttributes];
+                            selectedAttributes.forEach((attrId) => {
+                                if (!mergedAttributeIds.includes(attrId)) {
+                                    mergedAttributeIds.push(attrId);
+                                }
+                            });
+                            mergedAttributeIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+                            newGroup['attribute'] = mergedAttributeIds.map((attrId) => ({
+                                '$': { 'attribute-id': attrId }
+                            }));
+                        }
+                        else if (updateOption === 'Update only the differences') {
+                            const sourceGroup = groupDefinitions.find((g) => g['$']['group-id'] === group['$']['group-id']);
+                            const existingAttributes = ((_b = newGroup['attribute']) === null || _b === void 0 ? void 0 : _b.map((attr) => attr['$']['attribute-id'])) || [];
+                            const sourceAttributes = ((_c = sourceGroup === null || sourceGroup === void 0 ? void 0 : sourceGroup.attribute) === null || _c === void 0 ? void 0 : _c.map((attr) => attr['$']['attribute-id'])) || [];
+                            const mergedAttributeIds = [...existingAttributes];
+                            sourceAttributes.forEach((attrId) => {
+                                if (!mergedAttributeIds.includes(attrId)) {
+                                    mergedAttributeIds.push(attrId);
+                                }
+                            });
+                            mergedAttributeIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+                            newGroup['attribute'] = mergedAttributeIds.map((attrId) => ({
+                                '$': { 'attribute-id': attrId }
+                            }));
+                        }
+                        return newGroup;
                     }
-                    if (updateOption === 'Update with selected attributes') {
-                        newGroup['attribute'] = selectedAttributes.map((attrId) => ({
-                            '$': { 'attribute-id': attrId }
-                        }));
+                    return group;
+                });
+                // Add missing groups
+                selectedGroupDefinitions.forEach((groupId) => {
+                    const alreadyExists = mergedGroups.some((group) => group['$']['group-id'] === groupId);
+                    if (!alreadyExists) {
+                        mergedGroups.push({
+                            '$': { 'group-id': groupId },
+                            'display-name': [{
+                                    '_': groupId,
+                                    '$': { 'xml:lang': 'x-default' }
+                                }],
+                            'attribute': selectedAttributes.map((attrId) => ({
+                                '$': { 'attribute-id': attrId }
+                            }))
+                        });
                     }
-                    else if (updateOption === 'Update only the differences') {
-                        const existingAttributes = ((_a = newGroup['attribute']) === null || _a === void 0 ? void 0 : _a.map((attr) => attr['$']['attribute-id'])) || [];
-                        newGroup['attribute'] = selectedAttributes
-                            .filter(attrId => existingAttributes.includes(attrId))
-                            .map(attrId => ({
-                            '$': { 'attribute-id': attrId }
-                        }));
-                    }
-                    return newGroup;
-                }
-                return group;
-            });
-            // === ADD NEW GROUPS IF NOT EXIST ===
-            selectedGroupDefinitions.forEach((groupId) => {
-                const alreadyExists = mergedGroups.some((group) => group['$']['group-id'] === groupId);
-                if (!alreadyExists) {
-                    mergedGroups.push({
-                        '$': { 'group-id': groupId },
-                        'display-name': [{
-                                '_': groupId,
-                                '$': { 'xml:lang': 'x-default' }
-                            }],
-                        'attribute': selectedAttributes.map((attrId) => ({
-                            '$': { 'attribute-id': attrId }
-                        }))
-                    });
-                }
-            });
-            selectedTypeToUpdate['group-definitions'][0]['attribute-group'] = mergedGroups;
+                });
+                // Sort groups
+                mergedGroups.sort((a, b) => a['$']['group-id'].toLowerCase().localeCompare(b['$']['group-id'].toLowerCase()));
+                selectedTypeToUpdate['group-definitions'][0]['attribute-group'] = mergedGroups;
+            }
             // === WRITE BACK ===
             const updatedXml = builder.buildObject(result);
             fs.writeFileSync(selectedFilePath, updatedXml);
             vscode.window.showInformationMessage('Destination file updated with selected attributes and groups.');
         }
         catch (err) {
-            if (err instanceof Error) {
-                vscode.window.showErrorMessage('Error parsing destination XML file: ' + err.message);
-            }
-            else {
-                vscode.window.showErrorMessage('Unknown error occurred during file parsing.');
-            }
+            vscode.window.showErrorMessage('Error updating destination file: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
 }
-// Registering the commands
 function activate(context) {
-    const disposableUpload = vscode.commands.registerCommand('sfcc-meta-object-manager.uploadMetaFile', () => __awaiter(this, void 0, void 0, function* () {
-        yield uploadSFCCMetaFile(context);
-    }));
-    const disposableWholeUpdate = vscode.commands.registerCommand('sfcc-meta-object-manager.updateWholeTypeExtension', () => __awaiter(this, void 0, void 0, function* () {
+    const disposableReplace = vscode.commands.registerCommand('sfcc-meta-object-manager.replaceSystemObjectType', () => __awaiter(this, void 0, void 0, function* () {
         yield updateWholeTypeExtension(context);
     }));
-    const disposableDetailedUpdate = vscode.commands.registerCommand('sfcc-meta-object-manager.updateDetailedTypeExtension', () => __awaiter(this, void 0, void 0, function* () {
+    const disposableUpdate = vscode.commands.registerCommand('sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups', () => __awaiter(this, void 0, void 0, function* () {
         yield updateDetailedTypeExtension(context);
     }));
-    context.subscriptions.push(disposableUpload);
-    context.subscriptions.push(disposableWholeUpdate);
-    context.subscriptions.push(disposableDetailedUpdate);
+    context.subscriptions.push(disposableReplace);
+    context.subscriptions.push(disposableUpdate);
 }
 exports.activate = activate;
 //# sourceMappingURL=extension.js.map

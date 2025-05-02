@@ -1,20 +1,19 @@
 {
   "name": "sfcc-meta-object-manager",
   "displayName": "SFCC Meta Object Manager",
-  "description": "A VS Code extension for managing Salesforce Commerce Cloud (SFCC) meta-system objects, updating custom attributes, and managing group definitions.",
+  "description": "A VS Code extension for Salesforce Commerce Cloud (SFCC) developers to easily manage and update meta XML files for system objects, custom attributes, and group definitions.",
   "version": "0.1.0",
-  "publisher": "YourPublisherName",
+  "publisher": "IvayloTrepetanov",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/sfcc-meta-object-manager.git"
+    "url": "https://github.com/interfan/sfcc-meta-updater"
   },
   "engines": {
     "vscode": "^1.60.0"
   },
   "activationEvents": [
-    "onCommand:sfcc-meta-object-manager.uploadMetaFile",
-    "onCommand:sfcc-meta-object-manager.updateWholeTypeExtension",
-    "onCommand:sfcc-meta-object-manager.updateDetailedTypeExtension"
+    "onCommand:sfcc-meta-object-manager.replaceSystemObjectType",
+    "onCommand:sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -37,16 +36,12 @@
   "contributes": {
     "commands": [
       {
-        "command": "sfcc-meta-object-manager.uploadMetaFile",
-        "title": "Upload SFCC Meta File"
+        "command": "sfcc-meta-object-manager.replaceSystemObjectType",
+        "title": "SFCC Update Meta: Replace Entire Type Extension"
       },
       {
-        "command": "sfcc-meta-object-manager.updateWholeTypeExtension",
-        "title": "Update Whole Type-Extension"
-      },
-      {
-        "command": "sfcc-meta-object-manager.updateDetailedTypeExtension",
-        "title": "Update Detailed Type-Extension"
+        "command": "sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups",
+        "title": "SFCC Update Meta: Update Attributes & Groups (Type Extension)"
       }
     ]
   }
