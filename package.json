@@ -42,11 +42,19 @@
     "commands": [
       {
         "command": "sfcc-meta-object-manager.replaceSystemObjectType",
-        "title": "SFCC Update Meta: Replace Entire Type Extension"
+        "title": "SFCC Meta: Replace Entire Type Extension"
       },
       {
-        "command": "sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups",
-        "title": "SFCC Update Meta: Update Attributes & Groups (Type Extension)"
+          "command": "sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups",
+          "title": "SFCC Meta: Update Attributes & Groups (Type Extension)"
+      },
+      {
+          "command": "sfcc-meta-object-manager.exportTypeExtensions",
+          "title": "SFCC Meta: Export TypeExtensions to Files"
+      },
+      {
+          "command": "sfcc-meta-object-manager.exportTypeExtensionsAndGroups",
+          "title": "SFCC Meta: Export TypeExtensions and Groups to Files"
       }
     ]
   }

@@ -14,8 +14,12 @@ interface AttributeDefinition {
 interface GroupDefinition {
     '$': {
         'group-id': string;
-        'type'?: string; // optional, in case some groups do not have type
+        'type'?: string;
     };
+    'display-name'?: Array<{
+        '_': string;
+        '$': { 'xml:lang': string };
+    }>;
     'attribute'?: Array<{
         '$': {
             'attribute-id': string;
@@ -45,14 +49,11 @@ interface SFCCMetaData {
     };
 }
 
-// Function to handle file upload and parsing
 async function uploadSFCCMetaFile(context: vscode.ExtensionContext): Promise<SFCCMetaData | null> {
     const fileUris = await vscode.window.showOpenDialog({
         canSelectFiles: true,
         canSelectMany: false,
-        filters: {
-            'XML Files': ['xml'],
-        },
+        filters: { 'XML Files': ['xml'] },
         openLabel: 'Select SFCC Meta System Object File',
     });
 
@@ -63,9 +64,8 @@ async function uploadSFCCMetaFile(context: vscode.ExtensionContext): Promise<SFC
 
     const filePath = fileUris[0].fsPath;
     const fileContent = fs.readFileSync(filePath, 'utf-8');
-    
-    // Parse the XML
     const parser = new xml2js.Parser();
+
     return new Promise((resolve, reject) => {
         parser.parseString(fileContent, (err, result) => {
             if (err) {
@@ -73,15 +73,11 @@ async function uploadSFCCMetaFile(context: vscode.ExtensionContext): Promise<SFC
                 reject(err);
             }
 
-            // Cast the parsed data to SFCCMetaData
             const parsedData = result as SFCCMetaData;
-
-            // Check if metadata exists before proceeding
-            if (!parsedData || !parsedData.metadata || !parsedData.metadata['type-extension']) {
+            if (!parsedData?.metadata?.['type-extension']) {
                 vscode.window.showErrorMessage('Invalid XML structure. Missing metadata or type-extension.');
                 reject('Invalid XML structure');
             } else {
-                // Store parsed data in context or global state for further use
                 context.globalState.update('sfcc-meta-file', parsedData);
                 vscode.window.showInformationMessage('SFCC Meta file uploaded and parsed successfully.');
                 resolve(parsedData);
@@ -90,34 +86,33 @@ async function uploadSFCCMetaFile(context: vscode.ExtensionContext): Promise<SFC
     });
 }
 
-// Function to select a destination file with predictive search
 async function selectDestinationFile() {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
-        vscode.window.showErrorMessage('No workspace is open.');
+        vscode.window.showErrorMessage('No workspace open.');
         return;
     }
 
-    const workspacePath = workspaceFolders[0].uri.fsPath;
-
-    // Use findFiles to search for XML files dynamically based on input
-    const files = await vscode.workspace.findFiles('**/*.xml', '**/node_modules/**'); // Exclude node_modules
-
-    // Map the files to file paths for display
+    const files = await vscode.workspace.findFiles('**/*.xml', '**/node_modules/**');
     const filePaths = files.map(file => file.fsPath);
 
-    // Display files for the user to select based on the typed input
     const selectedFile = await vscode.window.showQuickPick(filePaths, {
-        placeHolder: 'Select the destination XML file to update',
-        matchOnDetail: true, // This ensures that file names are matched even if typed partially
+        placeHolder: 'Select destination XML file',
+        matchOnDetail: true,
     });
 
-    if (selectedFile) {
-        return selectedFile;
-    }
+    return selectedFile || null;
+}
 
-    vscode.window.showErrorMessage('No file selected.');
-    return null;
+async function selectFolder(): Promise<string | undefined> {
+    const folders = await vscode.window.showOpenDialog({
+        canSelectFolders: true,
+        canSelectFiles: false,
+        canSelectMany: false,
+        openLabel: 'Select destination folder',
+    });
+
+    return folders?.[0]?.fsPath;
 }
 
 async function updateWholeTypeExtension(context: vscode.ExtensionContext) {
@@ -125,297 +120,209 @@ async function updateWholeTypeExtension(context: vscode.ExtensionContext) {
     if (!parsedData) return;
 
     const typeExtensions = parsedData.metadata['type-extension'];
-    const typeIds = typeExtensions.map((type) => type['$']['type-id']);
-    const selectedTypeId = await vscode.window.showQuickPick(typeIds, {
-        placeHolder: 'Select Type Extension to update',
-    });
+    const typeIds = typeExtensions.map(t => t['$']['type-id']);
 
+    const selectedTypeId = await vscode.window.showQuickPick(typeIds, { placeHolder: 'Select Type Extension' });
     if (!selectedTypeId) return;
 
-    const selectedType = typeExtensions.find((type) => type['$']['type-id'] === selectedTypeId);
-    if (!selectedType) {
-        vscode.window.showErrorMessage('Selected type-extension not found.');
-        return;
-    }
+    const selectedType = typeExtensions.find(t => t['$']['type-id'] === selectedTypeId);
+    if (!selectedType) return;
 
     const selectedFilePath = await selectDestinationFile();
     if (!selectedFilePath) return;
 
-    const destinationFileContent = fs.readFileSync(selectedFilePath, 'utf-8');
+    const destinationContent = fs.readFileSync(selectedFilePath, 'utf-8');
     const parser = new xml2js.Parser();
-    const builder = new xml2js.Builder({
-        renderOpts: { pretty: true },
-        xmldec: { version: '1.0', encoding: 'UTF-8' },
-    });
+    const builder = new xml2js.Builder({ renderOpts: { pretty: true }, xmldec: { version: '1.0', encoding: 'UTF-8' } });
 
     try {
-        const result = await parser.parseStringPromise(destinationFileContent);
+        const result = await parser.parseStringPromise(destinationContent);
 
-        if (!result.metadata || !result.metadata['type-extension']) {
-            vscode.window.showErrorMessage('Destination file does not have the expected metadata or type-extension structure.');
+        if (!result.metadata?.['type-extension']) {
+            vscode.window.showErrorMessage('Destination file structure invalid.');
             return;
         }
 
-        // Clone selectedType so we can modify it safely
         const clonedType = JSON.parse(JSON.stringify(selectedType));
-
-        // === Sort custom-attribute-definitions ===
-        const attributeDefs = clonedType['custom-attribute-definitions']?.[0]?.['attribute-definition'] || [];
-        attributeDefs.sort((a: AttributeDefinition, b: AttributeDefinition) =>
-            a['$']['attribute-id'].toLowerCase().localeCompare(b['$']['attribute-id'].toLowerCase())
+        (clonedType['custom-attribute-definitions'][0]['attribute-definition'] as AttributeDefinition[]).sort(
+            (a, b) => a['$']['attribute-id'].localeCompare(b['$']['attribute-id'])
         );
 
-        // === Sort group-definitions ===
-        const groupDefs = clonedType['group-definitions']?.[0]?.['attribute-group'] || [];
-        groupDefs.sort((a: GroupDefinition, b: GroupDefinition) =>
-            a['$']['group-id'].toLowerCase().localeCompare(b['$']['group-id'].toLowerCase())
+        (clonedType['group-definitions'][0]['attribute-group'] as GroupDefinition[]).sort(
+            (a, b) => a['$']['group-id'].localeCompare(b['$']['group-id'])
         );
 
-        // Replace the selected type-extension in the destination file
-        const updatedTypeExtensions = result.metadata['type-extension'].map((type: any) => {
-            if (type['$']['type-id'] === selectedTypeId) {
-                return clonedType; // Use sorted clone
-            }
-            return type;
-        });
+        result.metadata['type-extension'] = result.metadata['type-extension'].map((type: any) =>
+            type['$']['type-id'] === selectedTypeId ? clonedType : type
+        );
 
-        result.metadata['type-extension'] = updatedTypeExtensions;
-
-        const updatedXml = builder.buildObject(result);
-        fs.writeFileSync(selectedFilePath, updatedXml);
-        vscode.window.showInformationMessage('Destination file updated with selected type-extension.');
-
+        fs.writeFileSync(selectedFilePath, builder.buildObject(result));
+        vscode.window.showInformationMessage('Destination file updated successfully.');
     } catch (err) {
-        vscode.window.showErrorMessage('Error parsing destination XML file: ' + (err instanceof Error ? err.message : String(err)));
+        vscode.window.showErrorMessage(`Error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
-
 
 async function updateDetailedTypeExtension(context: vscode.ExtensionContext) {
     const parsedData = await uploadSFCCMetaFile(context);
     if (!parsedData) return;
 
     const typeExtensions = parsedData.metadata['type-extension'];
-    const typeIds = typeExtensions.map((type) => type['$']['type-id']);
-    const selectedTypeId = await vscode.window.showQuickPick(typeIds, {
-        placeHolder: 'Select Type Extension to update',
-    });
+    const typeIds = typeExtensions.map(t => t['$']['type-id']);
 
+    const selectedTypeId = await vscode.window.showQuickPick(typeIds, { placeHolder: 'Select Type Extension' });
     if (!selectedTypeId) return;
 
-    const selectedType = typeExtensions.find((type) => type['$']['type-id'] === selectedTypeId);
-    if (!selectedType) {
-        vscode.window.showErrorMessage('Selected type-extension not found.');
-        return;
-    }
+    const selectedType = typeExtensions.find(t => t['$']['type-id'] === selectedTypeId);
+    if (!selectedType) return;
 
-    // Extract attribute-definitions
-    let attributeDefinitions: AttributeDefinition[] = [];
+    const attributeDefinitions = selectedType['custom-attribute-definitions'][0]?.['attribute-definition'] || [];
+    const attributeIds = attributeDefinitions.map(a => a['$']['attribute-id']).sort();
+    const selectedAttributes = await vscode.window.showQuickPick(attributeIds, { canPickMany: true, placeHolder: 'Select attributes' }) || [];
 
-    if (selectedType['custom-attribute-definitions'] && selectedType['custom-attribute-definitions'][0]) {
-        attributeDefinitions = selectedType['custom-attribute-definitions'][0]['attribute-definition'] || [];
-    }
+    const groupDefinitions = selectedType['group-definitions'][0]?.['attribute-group'] || [];
+    const groupIds = groupDefinitions.map(g => g['$']['group-id']).sort();
+    const selectedGroups = await vscode.window.showQuickPick(groupIds, { canPickMany: true, placeHolder: 'Select groups' }) || [];
 
-    const attributeNames = attributeDefinitions.map((attr) => attr['$']['attribute-id']).sort();
+    if (!selectedAttributes.length && !selectedGroups.length) return;
 
-    const selectedAttributes = await vscode.window.showQuickPick(attributeNames, {
-        canPickMany: true,
-        placeHolder: 'Select attributes to update (optional)',
-    }) || [];
+    const updateOption = selectedGroups.length
+        ? await vscode.window.showQuickPick(['Update with selected attributes', 'Update only the differences', 'Copy the entire group definition'], { placeHolder: 'Group update mode' })
+        : undefined;
 
-    // Select group definitions
-    const groupDefinitions = selectedType['group-definitions'][0]['attribute-group'] || [];
-    const groupNames = groupDefinitions.map((group) => group['$']['group-id']).sort();
-
-    const selectedGroupDefinitions = await vscode.window.showQuickPick(groupNames, {
-        canPickMany: true,
-        placeHolder: 'Select group definitions to update (optional)',
-    }) || [];
-
-    const hasAttributes = selectedAttributes.length > 0;
-    const hasGroups = selectedGroupDefinitions.length > 0;
-
-    // === Nothing to update
-    if (!hasAttributes && !hasGroups) {
-        vscode.window.showInformationMessage('No attributes or groups selected. Nothing to update.');
-        return;
-    }
-
-    // Ask for update option if groups are selected
-    let updateOption: string | undefined;
-
-    if (hasGroups) {
-        updateOption = await vscode.window.showQuickPick(
-            ['Update with selected attributes', 'Update only the differences', 'Copy the entire group definition'],
-            { placeHolder: 'Choose how you want to update the group definitions' }
-        );
-
-        if (!updateOption) {
-            vscode.window.showErrorMessage('No update option selected.');
-            return;
-        }
-    }
-
-    // Ask for destination file
     const selectedFilePath = await selectDestinationFile();
     if (!selectedFilePath) return;
 
-    const destinationFileContent = fs.readFileSync(selectedFilePath, 'utf-8');
+    const destinationContent = fs.readFileSync(selectedFilePath, 'utf-8');
     const parser = new xml2js.Parser();
-    const builder = new xml2js.Builder({
-        renderOpts: { pretty: true },
-        xmldec: { version: '1.0', encoding: 'UTF-8' },
-    });
+    const builder = new xml2js.Builder({ renderOpts: { pretty: true }, xmldec: { version: '1.0', encoding: 'UTF-8' } });
 
     try {
-        const result = await parser.parseStringPromise(destinationFileContent);
+        const result = await parser.parseStringPromise(destinationContent);
+        const selectedTypeToUpdate = result.metadata['type-extension'].find((t: any) => t['$']['type-id'] === selectedTypeId);
+        if (!selectedTypeToUpdate) return;
 
-        if (!result.metadata || !result.metadata['type-extension']) {
-            vscode.window.showErrorMessage('Destination file does not have the expected metadata or type-extension structure.');
-            return;
-        }
-
-        const selectedTypeToUpdate = result.metadata['type-extension'].find((type: any) => type['$']['type-id'] === selectedTypeId);
-
-        if (!selectedTypeToUpdate) {
-            vscode.window.showErrorMessage('Selected type-extension to update was not found in the destination file.');
-            return;
-        }
-
-        // === CUSTOM ATTRIBUTES MERGE ===
-        if (hasAttributes) {
-            const allAttributes = selectedTypeToUpdate['custom-attribute-definitions']?.[0]?.['attribute-definition'] || [];
-            const selectedAttributeIdsSet = new Set(selectedAttributes);
-
-            const mergedAttributes = allAttributes.map((attr: AttributeDefinition) => {
-                if (selectedAttributeIdsSet.has(attr['$']['attribute-id'])) {
-                    const newAttr = attributeDefinitions.find((a: AttributeDefinition) => a['$']['attribute-id'] === attr['$']['attribute-id']);
-                    return newAttr || attr;
-                }
-                return attr;
-            });
-
-            // Add new attributes if missing
-            selectedAttributes.forEach((attributeId) => {
-                if (!mergedAttributes.some((attr: AttributeDefinition) => attr['$']['attribute-id'] === attributeId)) {
-                    const newAttr = attributeDefinitions.find((a: AttributeDefinition) => a['$']['attribute-id'] === attributeId);
-                    if (newAttr) mergedAttributes.push(newAttr);
-                }
-            });
-
-            // Sort attributes
-            mergedAttributes.sort((a: AttributeDefinition, b: AttributeDefinition) =>
-                a['$']['attribute-id'].toLowerCase().localeCompare(b['$']['attribute-id'].toLowerCase())
+        if (selectedAttributes.length) {
+            const allAttributes = selectedTypeToUpdate['custom-attribute-definitions'][0]?.['attribute-definition'] || [];
+            const merged = (allAttributes as AttributeDefinition[]).map((attr: AttributeDefinition) =>
+                selectedAttributes.includes(attr['$']['attribute-id'])
+                    ? attributeDefinitions.find(a => a['$']['attribute-id'] === attr['$']['attribute-id']) || attr
+                    : attr
             );
 
-            if (!selectedTypeToUpdate['custom-attribute-definitions']) {
-                selectedTypeToUpdate['custom-attribute-definitions'] = [{}];
-            }
-
-            selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition'] = mergedAttributes;
-        }
-
-        // === GROUP DEFINITIONS MERGE ===
-        if (hasGroups) {
-            const allGroups = selectedTypeToUpdate['group-definitions'][0]['attribute-group'] || [];
-            const updatedGroupIdsSet = new Set(selectedGroupDefinitions);
-
-            const mergedGroups = allGroups.map((group: GroupDefinition) => {
-                if (updatedGroupIdsSet.has(group['$']['group-id'])) {
-                    const newGroup = { ...group };
-
-                    if (updateOption === 'Copy the entire group definition') {
-                        const sourceGroup = groupDefinitions.find((g: GroupDefinition) => g['$']['group-id'] === group['$']['group-id']);
-                        if (sourceGroup) return sourceGroup;
-                        return group;
-                    }
-
-                    if (updateOption === 'Update with selected attributes') {
-                        const existingAttributes = newGroup['attribute']?.map((attr) => attr['$']['attribute-id']) || [];
-                        const mergedAttributeIds = [...existingAttributes];
-
-                        selectedAttributes.forEach((attrId) => {
-                            if (!mergedAttributeIds.includes(attrId)) {
-                                mergedAttributeIds.push(attrId);
-                            }
-                        });
-
-                        mergedAttributeIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-
-                        newGroup['attribute'] = mergedAttributeIds.map((attrId) => ({
-                            '$': { 'attribute-id': attrId }
-                        }));
-                    } else if (updateOption === 'Update only the differences') {
-                        const sourceGroup = groupDefinitions.find((g: GroupDefinition) => g['$']['group-id'] === group['$']['group-id']);
-                        const existingAttributes: string[] = newGroup['attribute']?.map((attr) => attr['$']['attribute-id']) || [];
-                        const sourceAttributes: string[] = sourceGroup?.attribute?.map((attr) => attr['$']['attribute-id']) || [];
-
-                        const mergedAttributeIds: string[] = [...existingAttributes];
-
-                        sourceAttributes.forEach((attrId: string) => {
-                            if (!mergedAttributeIds.includes(attrId)) {
-                                mergedAttributeIds.push(attrId);
-                            }
-                        });
-
-                        mergedAttributeIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-
-                        newGroup['attribute'] = mergedAttributeIds.map((attrId: string) => ({
-                            '$': { 'attribute-id': attrId }
-                        }));
-                    }
-
-                    return newGroup;
+            selectedAttributes.forEach(attrId => {
+                if (!merged.some((attr: AttributeDefinition) => attr['$']['attribute-id'] === attrId)) {
+                    const newAttr = attributeDefinitions.find(a => a['$']['attribute-id'] === attrId);
+                    if (newAttr) merged.push(newAttr);
                 }
-
-                return group;
             });
 
-            // Add missing groups
-            selectedGroupDefinitions.forEach((groupId) => {
-                const alreadyExists = mergedGroups.some((group: GroupDefinition) => group['$']['group-id'] === groupId);
-                if (!alreadyExists) {
+            merged.sort((a, b) => a['$']['attribute-id'].localeCompare(b['$']['attribute-id']));
+            selectedTypeToUpdate['custom-attribute-definitions'][0]['attribute-definition'] = merged;
+        }
+
+        if (selectedGroups.length) {
+            const allGroups = selectedTypeToUpdate['group-definitions'][0]['attribute-group'] || [];
+            const mergedGroups = (allGroups as GroupDefinition[]).map((group: GroupDefinition) => {
+                if (!selectedGroups.includes(group['$']['group-id'])) return group;
+
+                const sourceGroup = groupDefinitions.find(g => g['$']['group-id'] === group['$']['group-id']);
+                const newGroup = { ...group };
+
+                if (updateOption === 'Copy the entire group definition') {
+                    return sourceGroup || group;
+                }
+
+                const existingAttrIds = (newGroup['attribute'] || []).map(attr => attr['$']['attribute-id']);
+                const newAttrIds = updateOption === 'Update only the differences'
+                    ? [...new Set([...existingAttrIds, ...(sourceGroup?.attribute?.map(a => a['$']['attribute-id']) || [])])]
+                    : [...new Set([...existingAttrIds, ...selectedAttributes])];
+
+                newAttrIds.sort();
+                newGroup['attribute'] = newAttrIds.map(id => ({ '$': { 'attribute-id': id } }));
+                return newGroup;
+            });
+
+            selectedGroups.forEach(groupId => {
+                if (!mergedGroups.some(g => g['$']['group-id'] === groupId)) {
                     mergedGroups.push({
                         '$': { 'group-id': groupId },
-                        'display-name': [{
-                            '_': groupId,
-                            '$': { 'xml:lang': 'x-default' }
-                        }],
-                        'attribute': selectedAttributes.map((attrId) => ({
-                            '$': { 'attribute-id': attrId }
-                        }))
+                        'display-name': [{ '_': groupId, '$': { 'xml:lang': 'x-default' } }],
+                        'attribute': selectedAttributes.map(id => ({ '$': { 'attribute-id': id } })),
                     });
                 }
             });
 
-            // Sort groups
-            mergedGroups.sort((a: GroupDefinition, b: GroupDefinition) =>
-                a['$']['group-id'].toLowerCase().localeCompare(b['$']['group-id'].toLowerCase())
-            );
-
+            mergedGroups.sort((a, b) => a['$']['group-id'].localeCompare(b['$']['group-id']));
             selectedTypeToUpdate['group-definitions'][0]['attribute-group'] = mergedGroups;
         }
 
-        // === WRITE BACK ===
-        const updatedXml = builder.buildObject(result);
-        fs.writeFileSync(selectedFilePath, updatedXml);
-        vscode.window.showInformationMessage('Destination file updated with selected attributes and groups.');
-
+        fs.writeFileSync(selectedFilePath, builder.buildObject(result));
+        vscode.window.showInformationMessage('Destination file updated.');
     } catch (err) {
-        vscode.window.showErrorMessage('Error updating destination file: ' + (err instanceof Error ? err.message : String(err)));
+        vscode.window.showErrorMessage(`Error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
-export function activate(context: vscode.ExtensionContext) {
-    const disposableReplace = vscode.commands.registerCommand('sfcc-meta-object-manager.replaceSystemObjectType', async () => {
-        await updateWholeTypeExtension(context);
+async function splitByTypeExtensions(context: vscode.ExtensionContext) {
+    const parsedData = await uploadSFCCMetaFile(context);
+    if (!parsedData) return;
+
+    const destinationFolder = await selectFolder();
+    if (!destinationFolder) return;
+
+    const builder = new xml2js.Builder({ renderOpts: { pretty: true }, xmldec: { version: '1.0', encoding: 'UTF-8' } });
+
+    parsedData.metadata['type-extension'].forEach(typeExt => {
+        const filename = path.join(destinationFolder, `system-object.${typeExt['$']['type-id']}.xml`);
+        fs.writeFileSync(filename, builder.buildObject({ metadata: { 'type-extension': [typeExt] } }));
     });
 
-    const disposableUpdate = vscode.commands.registerCommand('sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups', async () => {
-        await updateDetailedTypeExtension(context);
-    });
-
-    context.subscriptions.push(disposableReplace);
-    context.subscriptions.push(disposableUpdate);
+    vscode.window.showInformationMessage('TypeExtensions exported.');
 }
 
+async function splitByTypeAndGroups(context: vscode.ExtensionContext) {
+    const parsedData = await uploadSFCCMetaFile(context);
+    if (!parsedData) return;
+
+    const destinationFolder = await selectFolder();
+    if (!destinationFolder) return;
+
+    const builder = new xml2js.Builder({ renderOpts: { pretty: true }, xmldec: { version: '1.0', encoding: 'UTF-8' } });
+
+    parsedData.metadata['type-extension'].forEach(typeExt => {
+        const typeId = typeExt['$']['type-id'];
+        const groups = typeExt['group-definitions']?.[0]?.['attribute-group'] || [];
+
+        if (!groups.length) {
+            const filename = path.join(destinationFolder, `system-object.${typeId}.xml`);
+            fs.writeFileSync(filename, builder.buildObject({ metadata: { 'type-extension': [typeExt] } }));
+        } else {
+            groups.forEach((group: GroupDefinition) => {
+                const groupId = group['$']['group-id'];
+                const filename = path.join(destinationFolder, `system-object.${typeId}.${groupId}.xml`);
+                const exportData = {
+                    metadata: {
+                        'type-extension': [
+                            {
+                                '$': { 'type-id': typeId },
+                                'custom-attribute-definitions': typeExt['custom-attribute-definitions'],
+                                'group-definitions': [{ 'attribute-group': [group] }],
+                            },
+                        ],
+                    },
+                };
+                fs.writeFileSync(filename, builder.buildObject(exportData));
+            });
+        }
+    });
+
+    vscode.window.showInformationMessage('TypeExtensions and Groups exported.');
+}
+
+export function activate(context: vscode.ExtensionContext) {
+    context.subscriptions.push(vscode.commands.registerCommand('sfcc-meta-object-manager.replaceSystemObjectType', () => updateWholeTypeExtension(context)));
+    context.subscriptions.push(vscode.commands.registerCommand('sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups', () => updateDetailedTypeExtension(context)));
+    context.subscriptions.push(vscode.commands.registerCommand('sfcc-meta-object-manager.exportTypeExtensions', () => splitByTypeExtensions(context)));
+    context.subscriptions.push(vscode.commands.registerCommand('sfcc-meta-object-manager.exportTypeExtensionsAndGroups', () => splitByTypeAndGroups(context)));
+}
