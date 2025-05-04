@@ -300,18 +300,31 @@ async function splitByTypeAndGroups(context: vscode.ExtensionContext) {
         } else {
             groups.forEach((group: GroupDefinition) => {
                 const groupId = group['$']['group-id'];
+
+                // Collect only attributes used in the group
+                const attributeIdsInGroup = group.attribute?.map(attr => attr['$']['attribute-id']) || [];
+
+                const allAttributes: AttributeDefinition[] =
+                    typeExt['custom-attribute-definitions']?.[0]?.['attribute-definition'] || [];
+
+                const filteredAttributeDefinitions = allAttributes
+                    .filter(attr => attributeIdsInGroup.includes(attr['$']['attribute-id']));
+
                 const filename = path.join(destinationFolder, `system-object.${typeId}.${groupId}.xml`);
                 const exportData = {
                     metadata: {
                         'type-extension': [
                             {
                                 '$': { 'type-id': typeId },
-                                'custom-attribute-definitions': typeExt['custom-attribute-definitions'],
+                                'custom-attribute-definitions': [
+                                    { 'attribute-definition': filteredAttributeDefinitions }
+                                ],
                                 'group-definitions': [{ 'attribute-group': [group] }],
                             },
                         ],
                     },
                 };
+
                 fs.writeFileSync(filename, builder.buildObject(exportData));
             });
         }
@@ -319,6 +332,7 @@ async function splitByTypeAndGroups(context: vscode.ExtensionContext) {
 
     vscode.window.showInformationMessage('TypeExtensions and Groups exported.');
 }
+
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand('sfcc-meta-object-manager.replaceSystemObjectType', () => updateWholeTypeExtension(context)));

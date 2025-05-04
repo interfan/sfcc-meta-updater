@@ -264,14 +264,22 @@ function splitByTypeAndGroups(context) {
             }
             else {
                 groups.forEach((group) => {
+                    var _a, _b, _c;
                     const groupId = group['$']['group-id'];
+                    // Collect only attributes used in the group
+                    const attributeIdsInGroup = ((_a = group.attribute) === null || _a === void 0 ? void 0 : _a.map(attr => attr['$']['attribute-id'])) || [];
+                    const allAttributes = ((_c = (_b = typeExt['custom-attribute-definitions']) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c['attribute-definition']) || [];
+                    const filteredAttributeDefinitions = allAttributes
+                        .filter(attr => attributeIdsInGroup.includes(attr['$']['attribute-id']));
                     const filename = path.join(destinationFolder, `system-object.${typeId}.${groupId}.xml`);
                     const exportData = {
                         metadata: {
                             'type-extension': [
                                 {
                                     '$': { 'type-id': typeId },
-                                    'custom-attribute-definitions': typeExt['custom-attribute-definitions'],
+                                    'custom-attribute-definitions': [
+                                        { 'attribute-definition': filteredAttributeDefinitions }
+                                    ],
                                     'group-definitions': [{ 'attribute-group': [group] }],
                                 },
                             ],

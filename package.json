@@ -2,7 +2,7 @@
   "name": "sfcc-meta-object-manager",
   "displayName": "SFCC Meta Object Manager",
   "description": "A VS Code extension for Salesforce Commerce Cloud (SFCC) developers to easily manage and update meta XML files for system objects, custom attributes, and group definitions.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "IvayloTrepetanov",
   "repository": {
     "type": "git",
