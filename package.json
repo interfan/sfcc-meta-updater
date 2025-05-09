@@ -17,7 +17,13 @@
   ],
   "activationEvents": [
     "onCommand:sfcc-meta-object-manager.replaceSystemObjectType",
-    "onCommand:sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups"
+    "onCommand:sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups",
+    "onCommand:sfcc-meta-object-manager.exportTypeExtensions",
+    "onCommand:sfcc-meta-object-manager.exportTypeExtensionsAndGroups",
+    "onCommand:sfcc-meta-object-manager.replaceCustomObjectType",
+    "onCommand:sfcc-meta-object-manager.updateCustomObjectAttributesAndGroups",
+    "onCommand:sfcc-meta-object-manager.exportCustomTypes",
+    "onCommand:sfcc-meta-object-manager.exportCustomTypesAndGroups"
   ],
   "icon": "icon.png",
   "main": "./out/extension.js",
@@ -27,16 +33,16 @@
     "watch": "tsc -w -p ./",
     "lint": "eslint . --ext ts"
   },
- "dependencies": {
+  "dependencies": {
     "xml2js": "^0.4.23"
   },
   "devDependencies": {
-      "vscode": "^1.1.37",
-      "@types/node": "^16.0.0",
-      "@types/vscode": "^1.60.0",
-      "@types/xml2js": "^0.4.14",
-      "eslint": "^7.32.0",
-      "typescript": "^4.4.3"
+    "@types/node": "^16.0.0",
+    "@types/vscode": "^1.60.0",
+    "@types/xml2js": "^0.4.14",
+    "eslint": "^7.32.0",
+    "typescript": "^4.9.5",
+    "vscode": "^1.1.37"
   },
   "contributes": {
     "commands": [
@@ -45,16 +51,32 @@
         "title": "SFCC Meta: Replace Entire Type Extension"
       },
       {
-          "command": "sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups",
-          "title": "SFCC Meta: Update Attributes & Groups (Type Extension)"
+        "command": "sfcc-meta-object-manager.updateSystemObjectAttributesAndGroups",
+        "title": "SFCC Meta: Update Attributes & Groups (Type Extension)"
       },
       {
-          "command": "sfcc-meta-object-manager.exportTypeExtensions",
-          "title": "SFCC Meta: Export TypeExtensions to Files"
+        "command": "sfcc-meta-object-manager.exportTypeExtensions",
+        "title": "SFCC Meta: Export TypeExtensions to Files"
       },
       {
-          "command": "sfcc-meta-object-manager.exportTypeExtensionsAndGroups",
-          "title": "SFCC Meta: Export TypeExtensions and Groups to Files"
+        "command": "sfcc-meta-object-manager.exportTypeExtensionsAndGroups",
+        "title": "SFCC Meta: Export TypeExtensions and Groups to Files"
+      },
+      {
+        "command": "sfcc-meta-object-manager.replaceCustomObjectType",
+        "title": "SFCC Meta: Replace Entire Custom Type"
+      },
+      {
+        "command": "sfcc-meta-object-manager.updateCustomObjectAttributesAndGroups",
+        "title": "SFCC Meta: Update Attributes & Groups (Custom Type)"
+      },
+      {
+        "command": "sfcc-meta-object-manager.exportCustomTypes",
+        "title": "SFCC Meta: Export Custom Types to Files"
+      },
+      {
+        "command": "sfcc-meta-object-manager.exportCustomTypesAndGroups",
+        "title": "SFCC Meta: Export Custom Types and Groups to Files"
       }
     ]
   }
